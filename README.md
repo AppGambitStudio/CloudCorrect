@@ -28,7 +28,42 @@ How is this different from AWS Config, Trusted Advisor, or traditional monitorin
 - **Audit-Ready Evidence**: Every evaluation captures and persists raw technical evidence, providing a historical paper trail for compliance and troubleshooting that goes beyond simple logs.
 - **Developer-Centric**: Built for teams that move fast and need to ensure that manual changes or automation drifts don't break the intended architectural design.
 
-## 🛠️ Tech Stack
+## � Supported Services & Checks
+
+Every check type captures a set of **Properties** that can be referenced by subsequent checks in the same group using the `{{alias.property}}` syntax.
+
+| Service | Check Type | Description | Referenceable Properties |
+| :--- | :--- | :--- | :--- |
+| **EC2** | `INSTANCE_RUNNING` | Instance state is 'running' | `instanceId`, `publicIp`, `privateIp`, `state`, `name`, `instanceType`, `az`, `vpcId`, `subnetId`, `securityGroups` |
+| | `HAS_PUBLIC_IP` | Instance has a public IP assigned | |
+| | `IN_SECURITY_GROUP` | Instance is member of specific SG | |
+| | `IN_SUBNET` | Instance is in specific Subnet | |
+| **ALB** | `TARGET_GROUP_HEALTHY` | TG has >=1 healthy target | `healthyCount`, `totalCount`, `targetIds`, `targetGroupArn` |
+| **Route53** | `DNS_POINTS_TO` | Record matches expected value | `recordName`, `type`, `values`, `aliasValue`, `ttl`, `hostedZoneId` |
+| | `RECORD_EXISTS` | DNS record exists in zone | |
+| | `TTL_EQUALS` | Record TTL matches expected | |
+| **IAM** | `ROLE_EXISTS` | IAM Role exists | `roleName`, `arn`, `path`, `createDate` |
+| | `ROLE_HAS_POLICY` | Role has specific policy attached | `policyArn`, `roleName`, `attachedPolicies` |
+| **S3** | `S3_BUCKET_EXISTS` | S3 bucket exists | `bucketName`, `region`, `policy`, `config`, `rulesCount`, `objectKey`, `size`, `lastModified` |
+| | `S3_BUCKET_POLICY_PRESENT` | Bucket has a policy attached | |
+| | `S3_BUCKET_PUBLIC_ACCESS_BLOCKED`| Public Access Block fully enabled | |
+| | `S3_LIFECYCLE_CONFIGURED`| Bucket has lifecycle rules | |
+| | `S3_OBJECT_EXISTS` | Specific object key exists | |
+| **RDS** | `RDS_INSTANCE_AVAILABLE` | RDS state is 'available' | `dbInstanceIdentifier`, `state`, `publicAccess`, `encrypted`, `engine`, `instanceClass`, `subnetGroup` |
+| | `RDS_IN_SUBNET_GROUP` | Instance is in specific Subnet Group | |
+| | `RDS_PUBLIC_ACCESS_DISABLED`| PubliclyAccessible is false | |
+| | `RDS_ENCRYPTION_ENABLED` | Storage is encrypted | |
+| **ECS** | `ECS_CLUSTER_ACTIVE` | Cluster state is 'ACTIVE' | `clusterName`, `status`, `services`, `tasks` |
+| | `ECS_SERVICE_RUNNING` | Running >= Desired tasks | `serviceName`, `running`, `desired`, `status`, `taskDef`, `loadBalancers` |
+| | `ECS_SERVICE_RUNNING_COUNT_EQUALS_DESIRED` | Exact task count match | |
+| | `ECS_TASK_DEFINITION_REVISION_ACTIVE` | Specific revision is active | |
+| | `ECS_SERVICE_ATTACHED_TO_ALB` | Service is associated with ALB | |
+| **NETWORK**| `PING` | ICMP Echo response received | `target`, `latency` |
+| | `HTTP_200` | URL returns status 200 OK | `url`, `status`, `latency`, `contentType`, `server` |
+| | `HTTP_RESPONSE_CONTAINS` | Response contains substring | |
+
+
+## �🛠️ Tech Stack
 
 - **Frontend**: Next.js 15 (App Router), Tailwind CSS, Shadcn UI, Lucide Icons.
 - **Backend**: Node.js, Express, Sequelize ORM (PostgreSQL).

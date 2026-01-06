@@ -491,39 +491,58 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                                                     <>
                                                         <SelectItem value="INSTANCE_RUNNING">Instance is Running</SelectItem>
                                                         <SelectItem value="INSTANCE_HAS_PUBLIC_IP">Instance has Public IP</SelectItem>
+                                                        <SelectItem value="HAS_PUBLIC_IP">Has Public IP</SelectItem>
+                                                        <SelectItem value="IN_SECURITY_GROUP">In Security Group</SelectItem>
+                                                        <SelectItem value="IN_SUBNET">In Subnet</SelectItem>
                                                     </>
                                                 )}
                                                 {newCheck.service === 'ALB' && (
                                                     <SelectItem value="TARGET_GROUP_HEALTHY">Target Group Healthy</SelectItem>
                                                 )}
                                                 {newCheck.service === 'Route53' && (
-                                                    <SelectItem value="DNS_POINTS_TO">DNS Points To</SelectItem>
+                                                    <>
+                                                        <SelectItem value="DNS_POINTS_TO">DNS Points To</SelectItem>
+                                                        <SelectItem value="RECORD_EXISTS">Record Exists</SelectItem>
+                                                        <SelectItem value="TTL_EQUALS">TTL Equals</SelectItem>
+                                                    </>
                                                 )}
                                                 {newCheck.service === 'IAM' && (
                                                     <>
                                                         <SelectItem value="ROLE_EXISTS">Role Exists</SelectItem>
                                                         <SelectItem value="ROLE_HAS_POLICY">Role Has Policy</SelectItem>
+                                                        <SelectItem value="POLICY_ATTACHED_TO_RESOURCE">Policy Attached to Resource</SelectItem>
                                                     </>
                                                 )}
                                                 {newCheck.service === 'S3' && (
-                                                    <SelectItem value="S3_LIFECYCLE_CONFIGURED">Lifecycle Configured</SelectItem>
+                                                    <>
+                                                        <SelectItem value="S3_BUCKET_EXISTS">Bucket Exists</SelectItem>
+                                                        <SelectItem value="S3_BUCKET_POLICY_PRESENT">Policy Present</SelectItem>
+                                                        <SelectItem value="S3_BUCKET_PUBLIC_ACCESS_BLOCKED">Public Access Blocked</SelectItem>
+                                                        <SelectItem value="S3_LIFECYCLE_CONFIGURED">Lifecycle Configured</SelectItem>
+                                                        <SelectItem value="S3_OBJECT_EXISTS">Object Exists</SelectItem>
+                                                    </>
                                                 )}
                                                 {newCheck.service === 'NETWORK' && (
                                                     <>
                                                         <SelectItem value="HTTP_200">HTTP 200 OK</SelectItem>
+                                                        <SelectItem value="HTTP_RESPONSE_CONTAINS">HTTP Response Contains</SelectItem>
                                                         <SelectItem value="PING">ICMP Ping</SelectItem>
                                                     </>
                                                 )}
                                                 {newCheck.service === 'RDS' && (
                                                     <>
                                                         <SelectItem value="RDS_INSTANCE_AVAILABLE">Instance Available</SelectItem>
+                                                        <SelectItem value="RDS_IN_SUBNET_GROUP">In Subnet Group</SelectItem>
                                                         <SelectItem value="RDS_PUBLIC_ACCESS_DISABLED">Public Access Disabled</SelectItem>
                                                         <SelectItem value="RDS_ENCRYPTION_ENABLED">Encryption Enabled</SelectItem>
                                                     </>
                                                 )}
                                                 {newCheck.service === 'ECS' && (
                                                     <>
-                                                        <SelectItem value="ECS_SERVICE_RUNNING">Service Running</SelectItem>
+                                                        <SelectItem value="ECS_SERVICE_RUNNING">Running (Sufficient)</SelectItem>
+                                                        <SelectItem value="ECS_SERVICE_RUNNING_COUNT_EQUALS_DESIRED">Running (Exact)</SelectItem>
+                                                        <SelectItem value="ECS_TASK_DEFINITION_REVISION_ACTIVE">Task Def Revision Active</SelectItem>
+                                                        <SelectItem value="ECS_SERVICE_ATTACHED_TO_ALB">Attached to ALB</SelectItem>
                                                         <SelectItem value="ECS_CLUSTER_ACTIVE">Cluster Active</SelectItem>
                                                     </>
                                                 )}
@@ -556,21 +575,39 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
 
                                     <div className="space-y-3">
                                         <Label>Parameters</Label>
-                                        {newCheck.type === 'INSTANCE_RUNNING' || newCheck.type === 'INSTANCE_HAS_PUBLIC_IP' ? (
-                                            <Input
-                                                className="h-12 border-slate-200"
-                                                placeholder="Instance ID (i-xxx)"
-                                                value={newCheck.parameters.instanceId || ''}
-                                                onChange={(e) => setNewCheck({ ...newCheck, parameters: { instanceId: e.target.value } })}
-                                            />
+                                        {newCheck.service === 'EC2' ? (
+                                            <div className="space-y-2">
+                                                <Input
+                                                    className="h-12 border-slate-200"
+                                                    placeholder="Instance ID (i-xxx)"
+                                                    value={newCheck.parameters.instanceId || ''}
+                                                    onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, instanceId: e.target.value } })}
+                                                />
+                                                {newCheck.type === 'IN_SECURITY_GROUP' && (
+                                                    <Input
+                                                        className="h-12 border-slate-200"
+                                                        placeholder="Security Group ID (sg-xxx)"
+                                                        value={newCheck.parameters.securityGroupId || ''}
+                                                        onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, securityGroupId: e.target.value } })}
+                                                    />
+                                                )}
+                                                {newCheck.type === 'IN_SUBNET' && (
+                                                    <Input
+                                                        className="h-12 border-slate-200"
+                                                        placeholder="Subnet ID (subnet-xxx)"
+                                                        value={newCheck.parameters.subnetId || ''}
+                                                        onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, subnetId: e.target.value } })}
+                                                    />
+                                                )}
+                                            </div>
                                         ) : newCheck.type === 'TARGET_GROUP_HEALTHY' ? (
                                             <Input
                                                 className="h-12 border-slate-200"
                                                 placeholder="Target Group ARN"
                                                 value={newCheck.parameters.targetGroupArn || ''}
-                                                onChange={(e) => setNewCheck({ ...newCheck, parameters: { targetGroupArn: e.target.value } })}
+                                                onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, targetGroupArn: e.target.value } })}
                                             />
-                                        ) : newCheck.type === 'DNS_POINTS_TO' ? (
+                                        ) : newCheck.service === 'Route53' ? (
                                             <div className="space-y-2">
                                                 <Input
                                                     className="border-slate-200"
@@ -578,12 +615,22 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                                                     value={newCheck.parameters.recordName || ''}
                                                     onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, recordName: e.target.value } })}
                                                 />
-                                                <Input
-                                                    className="border-slate-200"
-                                                    placeholder="Expected Value (e.g. {{alias.property}})"
-                                                    value={newCheck.parameters.expectedValue || ''}
-                                                    onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, expectedValue: e.target.value } })}
-                                                />
+                                                {newCheck.type === 'DNS_POINTS_TO' && (
+                                                    <Input
+                                                        className="border-slate-200"
+                                                        placeholder="Expected Value (e.g. {{alias.property}})"
+                                                        value={newCheck.parameters.expectedValue || ''}
+                                                        onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, expectedValue: e.target.value } })}
+                                                    />
+                                                )}
+                                                {newCheck.type === 'TTL_EQUALS' && (
+                                                    <Input
+                                                        className="border-slate-200"
+                                                        placeholder="Expected TTL (e.g. 300)"
+                                                        value={newCheck.parameters.expectedTtl || ''}
+                                                        onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, expectedTtl: e.target.value } })}
+                                                    />
+                                                )}
                                                 <Input
                                                     className="border-slate-200"
                                                     placeholder="Hosted Zone ID"
@@ -591,7 +638,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                                                     onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, hostedZoneId: e.target.value } })}
                                                 />
                                             </div>
-                                        ) : newCheck.type === 'ROLE_EXISTS' || newCheck.type === 'ROLE_HAS_POLICY' ? (
+                                        ) : newCheck.service === 'IAM' ? (
                                             <div className="space-y-2">
                                                 <Input
                                                     className="border-slate-200"
@@ -599,7 +646,7 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                                                     value={newCheck.parameters.roleName || ''}
                                                     onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, roleName: e.target.value } })}
                                                 />
-                                                {newCheck.type === 'ROLE_HAS_POLICY' && (
+                                                {(newCheck.type === 'ROLE_HAS_POLICY' || newCheck.type === 'POLICY_ATTACHED_TO_RESOURCE') && (
                                                     <Input
                                                         className="border-slate-200"
                                                         placeholder="Policy ARN"
@@ -609,43 +656,81 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                                                 )}
                                             </div>
                                         ) : newCheck.service === 'S3' ? (
-                                            <Input
-                                                className="h-12 border-slate-200"
-                                                placeholder="Bucket Name"
-                                                value={newCheck.parameters.bucketName || ''}
-                                                onChange={(e) => setNewCheck({ ...newCheck, parameters: { bucketName: e.target.value } })}
-                                            />
+                                            <div className="space-y-2">
+                                                <Input
+                                                    className="h-12 border-slate-200"
+                                                    placeholder="Bucket Name"
+                                                    value={newCheck.parameters.bucketName || ''}
+                                                    onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, bucketName: e.target.value } })}
+                                                />
+                                                {newCheck.type === 'S3_OBJECT_EXISTS' && (
+                                                    <Input
+                                                        className="h-12 border-slate-200"
+                                                        placeholder="Object Key"
+                                                        value={newCheck.parameters.objectKey || ''}
+                                                        onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, objectKey: e.target.value } })}
+                                                    />
+                                                )}
+                                            </div>
                                         ) : newCheck.service === 'NETWORK' ? (
-                                            <Input
-                                                className="h-12 border-slate-200"
-                                                placeholder={newCheck.type === 'PING' ? 'IP or Hostname' : 'Complete URL (https://...)'}
-                                                value={newCheck.parameters.target || newCheck.parameters.url || ''}
-                                                onChange={(e) => {
-                                                    const field = newCheck.type === 'PING' ? 'target' : 'url';
-                                                    setNewCheck({ ...newCheck, parameters: { [field]: e.target.value } });
-                                                }}
-                                            />
+                                            <div className="space-y-2">
+                                                <Input
+                                                    className="h-12 border-slate-200"
+                                                    placeholder={newCheck.type === 'PING' ? 'IP or Hostname' : 'Complete URL (https://...)'}
+                                                    value={newCheck.parameters.target || newCheck.parameters.url || ''}
+                                                    onChange={(e) => {
+                                                        const field = newCheck.type === 'PING' ? 'target' : 'url';
+                                                        setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, [field]: e.target.value } });
+                                                    }}
+                                                />
+                                                {newCheck.type === 'HTTP_RESPONSE_CONTAINS' && (
+                                                    <Input
+                                                        className="h-12 border-slate-200"
+                                                        placeholder="Expected substring in response"
+                                                        value={newCheck.parameters.expectedSubstring || ''}
+                                                        onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, expectedSubstring: e.target.value } })}
+                                                    />
+                                                )}
+                                            </div>
                                         ) : newCheck.service === 'RDS' ? (
-                                            <Input
-                                                className="h-12 border-slate-200"
-                                                placeholder="DB Instance Identifier"
-                                                value={newCheck.parameters.dbInstanceIdentifier || ''}
-                                                onChange={(e) => setNewCheck({ ...newCheck, parameters: { dbInstanceIdentifier: e.target.value } })}
-                                            />
+                                            <div className="space-y-2">
+                                                <Input
+                                                    className="h-12 border-slate-200"
+                                                    placeholder="DB Instance Identifier"
+                                                    value={newCheck.parameters.dbInstanceIdentifier || ''}
+                                                    onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, dbInstanceIdentifier: e.target.value } })}
+                                                />
+                                                {newCheck.type === 'RDS_IN_SUBNET_GROUP' && (
+                                                    <Input
+                                                        className="h-12 border-slate-200"
+                                                        placeholder="Subnet Group Name"
+                                                        value={newCheck.parameters.subnetGroupName || ''}
+                                                        onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, subnetGroupName: e.target.value } })}
+                                                    />
+                                                )}
+                                            </div>
                                         ) : newCheck.service === 'ECS' ? (
                                             <div className="space-y-2">
                                                 <Input
-                                                    className="border-slate-200"
+                                                    className="h-12 border-slate-200"
                                                     placeholder="Cluster Name"
                                                     value={newCheck.parameters.clusterName || ''}
                                                     onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, clusterName: e.target.value } })}
                                                 />
-                                                {newCheck.type === 'ECS_SERVICE_RUNNING' && (
+                                                {newCheck.type !== 'ECS_CLUSTER_ACTIVE' && (
                                                     <Input
-                                                        className="border-slate-200"
+                                                        className="h-12 border-slate-200"
                                                         placeholder="Service Name"
                                                         value={newCheck.parameters.serviceName || ''}
                                                         onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, serviceName: e.target.value } })}
+                                                    />
+                                                )}
+                                                {newCheck.type === 'ECS_TASK_DEFINITION_REVISION_ACTIVE' && (
+                                                    <Input
+                                                        className="h-12 border-slate-200"
+                                                        placeholder="Expected Task Definition (ARN or family:rev)"
+                                                        value={newCheck.parameters.expectedTaskDefinition || ''}
+                                                        onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, expectedTaskDefinition: e.target.value } })}
                                                     />
                                                 )}
                                             </div>

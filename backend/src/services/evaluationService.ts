@@ -2,7 +2,7 @@ import { EC2Client, DescribeInstancesCommand } from '@aws-sdk/client-ec2';
 import { ElasticLoadBalancingV2Client, DescribeTargetHealthCommand } from '@aws-sdk/client-elastic-load-balancing-v2';
 import { Route53Client, ListResourceRecordSetsCommand } from '@aws-sdk/client-route-53';
 import { IAMClient, GetRoleCommand, ListAttachedRolePoliciesCommand } from '@aws-sdk/client-iam';
-import { S3Client, GetBucketLifecycleConfigurationCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetBucketLifecycleConfigurationCommand, HeadBucketCommand, GetBucketPolicyCommand, GetPublicAccessBlockCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { RDSClient, DescribeDBInstancesCommand } from '@aws-sdk/client-rds';
 import { ECSClient, DescribeClustersCommand, DescribeServicesCommand } from '@aws-sdk/client-ecs';
 import { AWSAdapter } from '../adapters/awsAdapter';
@@ -57,7 +57,7 @@ export const evaluateCheck = async (check: Check, account: AWSAccount, context: 
             case 'NETWORK':
                 if (check.type === 'PING') {
                     result = await evaluatePingCheck(checkWithResolvedParams);
-                } else if (check.type === 'HTTP_200') {
+                } else if (check.type === 'HTTP_200' || check.type === 'HTTP_RESPONSE_CONTAINS') {
                     result = await evaluateHTTPCheck(checkWithResolvedParams);
                 } else {
                     throw new Error(`Unsupported network check type: ${check.type}`);
@@ -155,9 +155,10 @@ async function evaluateEC2Check(check: Check, credentials: any): Promise<CheckRe
     const nameTag = instance.Tags?.find(t => t.Key === 'Name')?.Value || 'Unnamed';
 
     // Detailed evidence string for history view
-    const evidence = `ID: ${instanceId} | Name: ${nameTag} | State: ${state} | Type: ${instanceType} | AZ: ${az} | Public IP: ${publicIp || 'None'}`;
+    const securityGroups = instance.SecurityGroups?.map(sg => sg.GroupId).join(', ') || 'None';
+    const evidence = `ID: ${instanceId} | Name: ${nameTag} | State: ${state} | Type: ${instanceType} | AZ: ${az} | Public IP: ${publicIp || 'None'} | SGs: ${securityGroups}`;
 
-    if (check.type === 'INSTANCE_RUNNING') {
+    if (check.type === 'INSTANCE_RUNNING' || check.type === 'INSTANCE_AVAILABLE') {
         return {
             checkId: check.id,
             alias: check.alias,
@@ -165,11 +166,11 @@ async function evaluateEC2Check(check: Check, credentials: any): Promise<CheckRe
             expected: 'instance.state == running',
             observed: evidence,
             reason: state === 'running' ? `EC2 instance ${nameTag} (${instanceId}) is running` : `EC2 instance ${nameTag} (${instanceId}) is ${state}`,
-            data: { instanceId, publicIp, privateIp, state, name: nameTag, instanceType, az, vpcId, subnetId }
+            data: { instanceId, publicIp, privateIp, state, name: nameTag, instanceType, az, vpcId, subnetId, securityGroups: instance.SecurityGroups?.map(sg => sg.GroupId) }
         };
     }
 
-    if (check.type === 'INSTANCE_HAS_PUBLIC_IP') {
+    if (check.type === 'INSTANCE_HAS_PUBLIC_IP' || check.type === 'HAS_PUBLIC_IP') {
         return {
             checkId: check.id,
             alias: check.alias,
@@ -177,7 +178,35 @@ async function evaluateEC2Check(check: Check, credentials: any): Promise<CheckRe
             expected: 'instance has public ip',
             observed: evidence,
             reason: publicIp ? `EC2 instance ${nameTag} has public IP ${publicIp}` : `EC2 instance ${nameTag} has no public IP`,
-            data: { instanceId, publicIp, privateIp, state, name: nameTag, instanceType, az, vpcId, subnetId }
+            data: { instanceId, publicIp, privateIp, state, name: nameTag, instanceType, az, vpcId, subnetId, securityGroups: instance.SecurityGroups?.map(sg => sg.GroupId) }
+        };
+    }
+
+    if (check.type === 'IN_SECURITY_GROUP') {
+        const { securityGroupId } = check.parameters;
+        const hasSg = instance.SecurityGroups?.some(sg => sg.GroupId === securityGroupId);
+        return {
+            checkId: check.id,
+            alias: check.alias,
+            status: hasSg ? 'PASS' : 'FAIL',
+            expected: `instance in security group ${securityGroupId}`,
+            observed: evidence,
+            reason: hasSg ? `EC2 instance ${nameTag} is in security group ${securityGroupId}` : `EC2 instance ${nameTag} is NOT in security group ${securityGroupId}`,
+            data: { instanceId, publicIp, privateIp, state, name: nameTag, instanceType, az, vpcId, subnetId, securityGroups: instance.SecurityGroups?.map(sg => sg.GroupId) }
+        };
+    }
+
+    if (check.type === 'IN_SUBNET') {
+        const { subnetId: expectedSubnetId } = check.parameters;
+        const isInSubnet = subnetId === expectedSubnetId;
+        return {
+            checkId: check.id,
+            alias: check.alias,
+            status: isInSubnet ? 'PASS' : 'FAIL',
+            expected: `instance in subnet ${expectedSubnetId}`,
+            observed: evidence,
+            reason: isInSubnet ? `EC2 instance ${nameTag} is in subnet ${expectedSubnetId}` : `EC2 instance ${nameTag} is in subnet ${subnetId} (expected ${expectedSubnetId})`,
+            data: { instanceId, publicIp, privateIp, state, name: nameTag, instanceType, az, vpcId, subnetId, securityGroups: instance.SecurityGroups?.map(sg => sg.GroupId) }
         };
     }
 
@@ -213,19 +242,45 @@ async function evaluateALBCheck(check: Check, credentials: any): Promise<CheckRe
 
 async function evaluateRoute53Check(check: Check, credentials: any): Promise<CheckResult> {
     const client = await AWSAdapter.getRoute53Client(credentials);
-    const { recordName, expectedValue, hostedZoneId } = check.parameters;
+    const { recordName, hostedZoneId } = check.parameters;
+
+    const command = new ListResourceRecordSetsCommand({
+        HostedZoneId: hostedZoneId,
+        StartRecordName: recordName,
+        MaxItems: 1,
+    });
+    const response = await client.send(command);
+    const record = response.ResourceRecordSets?.find(r => r.Name === recordName || r.Name === `${recordName}.`);
+
+    if (!record) {
+        return {
+            checkId: check.id,
+            status: 'FAIL',
+            expected: check.type === 'RECORD_EXISTS' ? `DNS record ${recordName} exists` : 'DNS record exists',
+            observed: 'Record not found',
+            reason: `DNS record ${recordName} not found in hosted zone ${hostedZoneId}`,
+        };
+    }
+
+    const values = record.ResourceRecords?.map(v => v.Value) || [];
+    const aliasValue = record.AliasTarget?.DNSName;
+    const ttl = record.TTL;
+    const evidence = `Type: ${record.Type} | Values: ${values.join(', ') || aliasValue || 'None'} | TTL: ${ttl !== undefined ? ttl : 'Alias/None'}`;
+
+    if (check.type === 'RECORD_EXISTS') {
+        return {
+            checkId: check.id,
+            alias: check.alias,
+            status: 'PASS',
+            expected: `DNS record ${recordName} exists`,
+            observed: evidence,
+            reason: 'DNS record exists',
+            data: { recordName, type: record.Type, values, aliasValue, ttl, hostedZoneId }
+        };
+    }
 
     if (check.type === 'DNS_POINTS_TO') {
-        const command = new ListResourceRecordSetsCommand({
-            HostedZoneId: hostedZoneId,
-            StartRecordName: recordName,
-            MaxItems: 1,
-        });
-        const response = await client.send(command);
-        const record = response.ResourceRecordSets?.find(r => r.Name === recordName || r.Name === `${recordName}.`);
-        const values = record?.ResourceRecords?.map(v => v.Value) || [];
-        const aliasValue = record?.AliasTarget?.DNSName;
-
+        const { expectedValue } = check.parameters;
         const matched = values.includes(expectedValue) || aliasValue?.includes(expectedValue);
 
         return {
@@ -233,9 +288,23 @@ async function evaluateRoute53Check(check: Check, credentials: any): Promise<Che
             alias: check.alias,
             status: matched ? 'PASS' : 'FAIL',
             expected: `DNS record ${recordName} points to ${expectedValue}`,
-            observed: `DNS record points to ${values.join(', ') || aliasValue || 'unknown'}`,
+            observed: evidence,
             reason: matched ? 'DNS record matches expected value' : 'DNS record does not match expected value',
-            data: { recordName, values, aliasValue, type: record?.Type, ttl: record?.TTL, hostedZoneId }
+            data: { recordName, type: record.Type, values, aliasValue, ttl, hostedZoneId }
+        };
+    }
+
+    if (check.type === 'TTL_EQUALS') {
+        const { expectedTtl } = check.parameters;
+        const matched = ttl === parseInt(expectedTtl);
+        return {
+            checkId: check.id,
+            alias: check.alias,
+            status: matched ? 'PASS' : 'FAIL',
+            expected: `DNS record TTL == ${expectedTtl}`,
+            observed: evidence,
+            reason: matched ? 'TTL matches expected value' : `TTL ${ttl} does not match expected ${expectedTtl}`,
+            data: { recordName, type: record.Type, values, aliasValue, ttl, hostedZoneId }
         };
     }
 
@@ -272,7 +341,7 @@ async function evaluateIAMCheck(check: Check, credentials: any): Promise<CheckRe
         }
     }
 
-    if (check.type === 'ROLE_HAS_POLICY') {
+    if (check.type === 'ROLE_HAS_POLICY' || check.type === 'POLICY_ATTACHED_TO_RESOURCE') {
         const command = new ListAttachedRolePoliciesCommand({ RoleName: roleName });
         const response = await client.send(command);
         const hasPolicy = response.AttachedPolicies?.some(p => p.PolicyArn === policyArn);
@@ -281,9 +350,9 @@ async function evaluateIAMCheck(check: Check, credentials: any): Promise<CheckRe
             checkId: check.id,
             alias: check.alias,
             status: hasPolicy ? 'PASS' : 'FAIL',
-            expected: `IAM role has policy ${policyArn} attached`,
+            expected: `IAM policy ${policyArn} attached to role ${roleName}`,
             observed: hasPolicy ? 'Policy found' : 'Policy not found',
-            reason: hasPolicy ? 'IAM role has the required policy' : 'IAM role is missing the required policy',
+            reason: hasPolicy ? 'IAM policy is attached' : 'IAM policy is missing',
             data: { roleName, policyArn, attachedPolicies: response.AttachedPolicies }
         };
     }
@@ -295,35 +364,158 @@ async function evaluateS3Check(check: Check, credentials: any): Promise<CheckRes
     const { bucketName } = check.parameters;
     const client = await AWSAdapter.getS3Client(credentials, check.region || 'us-east-1');
 
-    if (check.type === 'S3_LIFECYCLE_CONFIGURED') {
-        try {
-            const command = new GetBucketLifecycleConfigurationCommand({ Bucket: bucketName });
-            const response = await client.send(command);
-            const hasRules = (response.Rules?.length || 0) > 0;
-
+    try {
+        if (check.type === 'S3_BUCKET_EXISTS') {
+            const command = new HeadBucketCommand({ Bucket: bucketName });
+            await client.send(command);
             return {
                 checkId: check.id,
                 alias: check.alias,
-                status: hasRules ? 'PASS' : 'FAIL',
-                expected: `S3 bucket ${bucketName} has lifecycle rules`,
-                observed: hasRules ? `${response.Rules?.length} rules found` : 'No lifecycle rules found',
-                reason: hasRules ? 'Lifecycle policy is active' : 'Bucket missing lifecycle configuration',
-                data: { bucketName, rulesCount: response.Rules?.length || 0, region: check.region || 'us-east-1' }
-            };
-        } catch (error: any) {
-            return {
-                checkId: check.id,
-                alias: check.alias,
-                status: 'FAIL',
-                expected: `S3 bucket ${bucketName} has lifecycle rules`,
-                observed: 'Error fetching configuration',
-                reason: error.message,
-                data: { bucketName }
+                status: 'PASS',
+                expected: `S3 bucket ${bucketName} exists`,
+                observed: 'Bucket exists',
+                reason: 'Bucket was found using HeadBucket',
+                data: { bucketName, region: check.region || 'us-east-1' }
             };
         }
-    }
 
-    throw new Error(`Unsupported S3 check type: ${check.type}`);
+        if (check.type === 'S3_BUCKET_POLICY_PRESENT') {
+            try {
+                const command = new GetBucketPolicyCommand({ Bucket: bucketName });
+                const response = await client.send(command);
+                const hasPolicy = !!response.Policy;
+                return {
+                    checkId: check.id,
+                    alias: check.alias,
+                    status: hasPolicy ? 'PASS' : 'FAIL',
+                    expected: `S3 bucket ${bucketName} has a policy`,
+                    observed: hasPolicy ? 'Policy found' : 'No policy found',
+                    reason: hasPolicy ? 'Bucket policy is attached' : 'Bucket has no policy attached',
+                    data: { bucketName, policy: response.Policy }
+                };
+            } catch (policyError: any) {
+                if (policyError.name === 'NoSuchBucketPolicy') {
+                    return {
+                        checkId: check.id,
+                        alias: check.alias,
+                        status: 'FAIL',
+                        expected: `S3 bucket ${bucketName} has a policy`,
+                        observed: 'No policy found',
+                        reason: 'Bucket has no policy attached',
+                        data: { bucketName }
+                    };
+                }
+                throw policyError;
+            }
+        }
+
+        if (check.type === 'S3_BUCKET_PUBLIC_ACCESS_BLOCKED') {
+            try {
+                const command = new GetPublicAccessBlockCommand({ Bucket: bucketName });
+                const response = await client.send(command);
+                const isBlocked = response.PublicAccessBlockConfiguration?.BlockPublicAcls &&
+                    response.PublicAccessBlockConfiguration?.BlockPublicPolicy &&
+                    response.PublicAccessBlockConfiguration?.IgnorePublicAcls &&
+                    response.PublicAccessBlockConfiguration?.RestrictPublicBuckets;
+
+                return {
+                    checkId: check.id,
+                    alias: check.alias,
+                    status: isBlocked ? 'PASS' : 'FAIL',
+                    expected: 'All Public Access Block settings enabled',
+                    observed: isBlocked ? 'All blocked' : 'Some settings not blocked',
+                    reason: isBlocked ? 'Public access is fully blocked at bucket level' : 'Public access is NOT fully blocked',
+                    data: { bucketName, config: response.PublicAccessBlockConfiguration }
+                };
+            } catch (pabError: any) {
+                if (pabError.name === 'NoSuchPublicAccessBlockConfiguration') {
+                    return {
+                        checkId: check.id,
+                        alias: check.alias,
+                        status: 'FAIL',
+                        expected: 'All Public Access Block settings enabled',
+                        observed: 'No configuration found',
+                        reason: 'Public Access Block is not configured for this bucket',
+                        data: { bucketName }
+                    };
+                }
+                throw pabError;
+            }
+        }
+
+        if (check.type === 'S3_LIFECYCLE_CONFIGURED') {
+            try {
+                const command = new GetBucketLifecycleConfigurationCommand({ Bucket: bucketName });
+                const response = await client.send(command);
+                const hasRules = (response.Rules?.length || 0) > 0;
+
+                return {
+                    checkId: check.id,
+                    alias: check.alias,
+                    status: hasRules ? 'PASS' : 'FAIL',
+                    expected: `S3 bucket ${bucketName} has lifecycle rules`,
+                    observed: hasRules ? `${response.Rules?.length} rules found` : 'No lifecycle rules found',
+                    reason: hasRules ? 'Lifecycle policy is active' : 'Bucket missing lifecycle configuration',
+                    data: { bucketName, rulesCount: response.Rules?.length || 0, region: check.region || 'us-east-1' }
+                };
+            } catch (lifecycleError: any) {
+                if (lifecycleError.name === 'NoSuchLifecycleConfiguration') {
+                    return {
+                        checkId: check.id,
+                        alias: check.alias,
+                        status: 'FAIL',
+                        expected: `S3 bucket ${bucketName} has lifecycle rules`,
+                        observed: 'No lifecycle configuration found',
+                        reason: 'Bucket has no lifecycle policy',
+                        data: { bucketName }
+                    };
+                }
+                throw lifecycleError;
+            }
+        }
+
+        if (check.type === 'S3_OBJECT_EXISTS') {
+            const { objectKey } = check.parameters;
+            try {
+                const command = new HeadObjectCommand({ Bucket: bucketName, Key: objectKey });
+                const response = await client.send(command);
+                return {
+                    checkId: check.id,
+                    alias: check.alias,
+                    status: 'PASS',
+                    expected: `Object ${objectKey} exists in bucket ${bucketName}`,
+                    observed: `Object exists (Size: ${response.ContentLength} bytes)`,
+                    reason: 'Object found in bucket',
+                    data: { bucketName, objectKey, size: response.ContentLength, lastModified: response.LastModified }
+                };
+            } catch (objectError: any) {
+                if (objectError.name === 'NotFound' || objectError.$metadata?.httpStatusCode === 404) {
+                    return {
+                        checkId: check.id,
+                        alias: check.alias,
+                        status: 'FAIL',
+                        expected: `Object ${objectKey} exists in bucket ${bucketName}`,
+                        observed: 'Object not found',
+                        reason: 'HeadObject returned 404',
+                        data: { bucketName, objectKey }
+                    };
+                }
+                throw objectError;
+            }
+        }
+
+        throw new Error(`Unsupported S3 check type: ${check.type}`);
+    } catch (error: any) {
+        return {
+            checkId: check.id,
+            alias: check.alias,
+            status: 'FAIL',
+            expected: 'Successful S3 API call',
+            observed: 'API Error',
+            reason: error.message,
+            data: { bucketName }
+        };
+    }
 }
 
 async function evaluateRDSCheck(check: Check, credentials: any): Promise<CheckResult> {
@@ -389,6 +581,21 @@ async function evaluateRDSCheck(check: Check, credentials: any): Promise<CheckRe
             };
         }
 
+        if (check.type === 'RDS_IN_SUBNET_GROUP') {
+            const { subnetGroupName: expectedSubnetGroup } = check.parameters;
+            const actualSubnetGroup = dbInstance.DBSubnetGroup?.DBSubnetGroupName;
+            const matched = actualSubnetGroup === expectedSubnetGroup;
+            return {
+                checkId: check.id,
+                alias: check.alias,
+                status: matched ? 'PASS' : 'FAIL',
+                expected: `DB Subnet Group == ${expectedSubnetGroup}`,
+                observed: evidence + ` | SubnetGroup: ${actualSubnetGroup}`,
+                reason: matched ? `RDS instance is in subnet group ${expectedSubnetGroup}` : `RDS instance is in subnet group ${actualSubnetGroup} (expected ${expectedSubnetGroup})`,
+                data: { dbInstanceIdentifier, state, publicAccess, encrypted, engine, instanceClass, subnetGroup: actualSubnetGroup }
+            };
+        }
+
         throw new Error(`Unsupported RDS check type: ${check.type}`);
     } catch (error: any) {
         return {
@@ -437,7 +644,7 @@ async function evaluateECSCheck(check: Check, credentials: any): Promise<CheckRe
             };
         }
 
-        if (check.type === 'ECS_SERVICE_RUNNING') {
+        if (check.type === 'ECS_SERVICE_RUNNING' || check.type === 'ECS_SERVICE_RUNNING_COUNT_EQUALS_DESIRED' || check.type === 'ECS_TASK_DEFINITION_REVISION_ACTIVE' || check.type === 'ECS_SERVICE_ATTACHED_TO_ALB') {
             const { clusterName, serviceName } = check.parameters;
             const command = new DescribeServicesCommand({ cluster: clusterName, services: [serviceName] });
             const response = await client.send(command);
@@ -456,17 +663,62 @@ async function evaluateECSCheck(check: Check, credentials: any): Promise<CheckRe
             const running = service.runningCount;
             const desired = service.desiredCount;
             const status = service.status;
-            const evidence = `Status: ${status} | Running: ${running}/${desired} tasks`;
+            const taskDef = service.taskDefinition;
+            const loadBalancers = service.loadBalancers?.length || 0;
+            const evidence = `Status: ${status} | Running: ${running}/${desired} | TaskDef: ${taskDef?.split('/').pop()} | LBs: ${loadBalancers}`;
 
-            return {
-                checkId: check.id,
-                alias: check.alias,
-                status: (running !== undefined && desired !== undefined && running >= desired && status === 'ACTIVE') ? 'PASS' : 'FAIL',
-                expected: `runningCount >= desiredCount (${desired})`,
-                observed: evidence,
-                reason: (running !== undefined && desired !== undefined && running >= desired) ? `ECS service is healthy` : `ECS service has insufficient tasks`,
-                data: { clusterName, serviceName, running, desired, status }
-            };
+            if (check.type === 'ECS_SERVICE_RUNNING') {
+                const isHealthy = running !== undefined && desired !== undefined && running >= desired && status === 'ACTIVE';
+                return {
+                    checkId: check.id,
+                    alias: check.alias,
+                    status: isHealthy ? 'PASS' : 'FAIL',
+                    expected: `runningCount >= desiredCount (${desired})`,
+                    observed: evidence,
+                    reason: isHealthy ? `ECS service is healthy` : `ECS service has insufficient tasks`,
+                    data: { clusterName, serviceName, running, desired, status, taskDef, loadBalancers: service.loadBalancers }
+                };
+            }
+
+            if (check.type === 'ECS_SERVICE_RUNNING_COUNT_EQUALS_DESIRED') {
+                const matched = running === desired;
+                return {
+                    checkId: check.id,
+                    alias: check.alias,
+                    status: matched ? 'PASS' : 'FAIL',
+                    expected: `runningCount == desiredCount (${desired})`,
+                    observed: evidence,
+                    reason: matched ? `Running count matches desired count` : `Running count (${running}) does not match desired (${desired})`,
+                    data: { clusterName, serviceName, running, desired, status, taskDef, loadBalancers: service.loadBalancers }
+                };
+            }
+
+            if (check.type === 'ECS_TASK_DEFINITION_REVISION_ACTIVE') {
+                const { expectedTaskDefinition } = check.parameters;
+                const matched = taskDef === expectedTaskDefinition || taskDef?.endsWith(expectedTaskDefinition);
+                return {
+                    checkId: check.id,
+                    alias: check.alias,
+                    status: matched ? 'PASS' : 'FAIL',
+                    expected: `Task Definition == ${expectedTaskDefinition}`,
+                    observed: evidence,
+                    reason: matched ? `Active task definition matches expected` : `Active task definition is ${taskDef?.split('/').pop()}`,
+                    data: { clusterName, serviceName, running, desired, status, taskDef, loadBalancers: service.loadBalancers }
+                };
+            }
+
+            if (check.type === 'ECS_SERVICE_ATTACHED_TO_ALB') {
+                const hasLb = loadBalancers > 0;
+                return {
+                    checkId: check.id,
+                    alias: check.alias,
+                    status: hasLb ? 'PASS' : 'FAIL',
+                    expected: 'Service has load balancer attached',
+                    observed: evidence,
+                    reason: hasLb ? `Service is attached to ${loadBalancers} load balancer(s)` : `Service has no load balancer attached`,
+                    data: { clusterName, serviceName, running, desired, status, taskDef, loadBalancers: service.loadBalancers }
+                };
+            }
         }
 
         throw new Error(`Unsupported ECS check type: ${check.type}`);
@@ -513,19 +765,31 @@ async function evaluatePingCheck(check: Check): Promise<CheckResult> {
 }
 
 async function evaluateHTTPCheck(check: Check): Promise<CheckResult> {
-    const { url } = check.parameters;
+    const { url, expectedSubstring } = check.parameters;
     const start = Date.now();
     try {
         const response = await axios.get(url, { timeout: 5000 });
         const latency = Date.now() - start;
+        const responseData = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+
+        let status: 'PASS' | 'FAIL' = response.status === 200 ? 'PASS' : 'FAIL';
+        let reason = response.status === 200 ? 'Service returned healthy status' : `Service returned ${response.status}`;
+        let expected = `HTTP GET ${url} returns 200 OK`;
+
+        if (check.type === 'HTTP_RESPONSE_CONTAINS' && status === 'PASS') {
+            expected = `HTTP GET ${url} returns 200 OK and contains "${expectedSubstring}"`;
+            const contains = responseData.includes(expectedSubstring);
+            status = contains ? 'PASS' : 'FAIL';
+            reason = contains ? `Response contains "${expectedSubstring}"` : `Response does NOT contain "${expectedSubstring}"`;
+        }
 
         return {
             checkId: check.id,
             alias: check.alias,
-            status: response.status === 200 ? 'PASS' : 'FAIL',
-            expected: `HTTP GET ${url} returns 200 OK`,
+            status,
+            expected,
             observed: `Status ${response.status} (${latency}ms)`,
-            reason: response.status === 200 ? 'Service returned healthy status' : `Service returned ${response.status}`,
+            reason,
             data: { url, status: response.status, latency, contentType: response.headers['content-type'], server: response.headers['server'] }
         };
     } catch (error: any) {
@@ -534,7 +798,7 @@ async function evaluateHTTPCheck(check: Check): Promise<CheckResult> {
             checkId: check.id,
             alias: check.alias,
             status: 'FAIL',
-            expected: `HTTP GET ${url} returns 200 OK`,
+            expected: check.type === 'HTTP_RESPONSE_CONTAINS' ? `HTTP GET ${url} returns 200 OK and contains "${expectedSubstring}"` : `HTTP GET ${url} returns 200 OK`,
             observed: error.response?.status ? `Status ${error.response.status}` : 'Request failed',
             reason: error.message,
             data: { url, status: error.response?.status, error: error.message, latency }

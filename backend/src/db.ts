@@ -218,7 +218,7 @@ Check.init(
             allowNull: false,
         },
         service: {
-            type: DataTypes.ENUM('EC2', 'ALB', 'Route53', 'IAM', 'S3', 'NETWORK'),
+            type: DataTypes.ENUM('EC2', 'ALB', 'Route53', 'IAM', 'S3', 'NETWORK', 'RDS', 'ECS'),
             allowNull: false,
         },
         scope: {
