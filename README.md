@@ -6,12 +6,12 @@ CloudCorrect helps platform and architecture teams maintain the integrity of the
 
 ## 🚀 Key Features
 
-- **Multi-Service Invariants**: Out-of-the-box support for **EC2, ALB, S3, Route53, IAM, RDS, and ECS**.
+- **Multi-Service Invariants**: Out-of-the-box support for **EC2, ALB, S3, Route53, IAM, RDS, and ECS**. More integrations are in the works.
 - **Continuous Auditing**: Define resource groups and schedule automated, periodic health audits.
 - **Dynamic Assertions**: Use aliases to create dependencies between checks (e.g., "DNS record must point to this EC2's Public IP").
 - **Pause/Resume Control**: Granular monitoring control for individual groups.
 - **Evidence-Based History**: Every audit run captures observed technical evidence and technical "reasons" for compliance audits.
-- **Fail-Fast Notifications**: Automated email alerts via **AWS SES** whenever an evaluation fails, sent to a configurable list of recipients.
+- **Fail-Fast Notifications**: Automated email alerts whenever an evaluation fails, sent to a configurable list of recipients.
 - **Multi-Tenant & Cross-Account**: Support for managing multiple AWS accounts using secure IAM Cross-Account Roles and External IDs.
 
 ## ❓ Why CloudCorrect?
