@@ -1,0 +1,50 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node dist/index.js",
+    "dev": "nodemon --ext ts --exec ts-node src/index.ts",
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@aws-sdk/client-ec2": "^3.962.0",
+    "@aws-sdk/client-ecs": "^3.962.0",
+    "@aws-sdk/client-elastic-load-balancing-v2": "^3.962.0",
+    "@aws-sdk/client-iam": "^3.962.0",
+    "@aws-sdk/client-rds": "^3.963.0",
+    "@aws-sdk/client-route-53": "^3.962.0",
+    "@aws-sdk/client-s3": "^3.962.0",
+    "@aws-sdk/client-ses": "^3.962.0",
+    "@aws-sdk/client-sts": "^3.962.0",
+    "axios": "^1.6.2",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "helmet": "^8.1.0",
+    "morgan": "^1.10.1",
+    "node-cron": "^4.2.1",
+    "nodemon": "^3.1.11",
+    "pg": "^8.16.3",
+    "pg-hstore": "^2.3.4",
+    "sequelize": "^6.37.7",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^22.0.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/uuid": "^9.0.7",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0"
+  }
+}

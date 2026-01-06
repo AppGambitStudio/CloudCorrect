@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudCorrect Read-Only Role for Cross-Account Monitoring'
+
+Parameters:
+  ExternalId:
+    Type: String
+    Description: 'Unique External ID for cross-account trust (provided by CloudCorrect)'
+  TrustAccount:
+    Type: String
+    Description: 'The AWS Account ID of the CloudCorrect service'
+    Default: '123456789012' # Placeholder: Replace with your CloudCorrect Central Account ID
+
+Resources:
+  CloudCorrectReadOnlyRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub 'CloudCorrect-ReadOnly-Role-${ExternalId}'
+      AssumeRolePolicyDocument:
+        Version: '2010-09-09'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${TrustAccount}:root'
+            Action: 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref ExternalId
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/ReadOnlyAccess'
+
+Outputs:
+  RoleArn:
+    Description: 'The ARN of the created read-only role'
+    Value: !GetAtt CloudCorrectReadOnlyRole.Arn
