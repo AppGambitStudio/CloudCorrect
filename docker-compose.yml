@@ -19,6 +19,8 @@ services:
       DATABASE_URL: postgres://cloudcorrect:cloudcorrect_pass@db:5432/cloudcorrect
       PORT: 5001
       NODE_ENV: production
+      SES_SENDER_EMAIL: ${SES_SENDER_EMAIL:-no-reply@appgambit.com}
+      APP_URL: ${APP_URL:-http://localhost:8800}
     ports:
       - "5001:5001"
     depends_on:

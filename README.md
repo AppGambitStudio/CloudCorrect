@@ -79,7 +79,9 @@ docker-compose up --build -d
 - **Backend**: [http://localhost:5001](http://localhost:5001)
 - **Database**: PostgreSQL on port 5437
 
-*Note: In production mode, ensure your environmental variables are correctly set in the `docker-compose.yml`.*
+*Note: In production mode, ensure your environmental variables are correctly set in the `docker-compose.yml`. Key variables include:*
+- `SES_SENDER_EMAIL`: The verified sender email or domain in AWS SES.
+- `APP_URL`: The public URL of the frontend (used for email notification links).
 
 ## � Commercial Support & Hosting
 

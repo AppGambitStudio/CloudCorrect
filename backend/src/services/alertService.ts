@@ -71,7 +71,7 @@ async function sendEmailNotification(group: any, failedChecks: any[]) {
         htmlBody += `
                 </tbody>
             </table>
-            <p>View full details in the <a href="http://localhost:3000/groups/${group.id}">Dashboard</a>.</p>
+            <p>View full details in the <a href="${process.env.APP_URL || 'http://localhost:8800'}/groups/${group.id}">Dashboard</a>.</p>
         `;
 
         const command = new SendEmailCommand({
@@ -83,7 +83,7 @@ async function sendEmailNotification(group: any, failedChecks: any[]) {
                     Text: { Data: `The evaluation for group ${group.name} failed. Check details in the dashboard.` }
                 }
             },
-            Source: 'noreply@cloudcorrect.io', // This needs to be a verified domain/email in SES
+            Source: process.env.SES_SENDER_EMAIL || 'no-reply@appgambit.com',
         });
 
         await sesClient.send(command);
