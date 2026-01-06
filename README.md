@@ -34,11 +34,12 @@ Every check type captures a set of **Properties** that can be referenced by subs
 
 | Service | Check Type | Description | Referenceable Properties |
 | :--- | :--- | :--- | :--- |
-| **EC2** | `INSTANCE_RUNNING` | Instance state is 'running' | `instanceId`, `publicIp`, `privateIp`, `state`, `name`, `instanceType`, `az`, `vpcId`, `subnetId`, `securityGroups` |
+| **EC2** | `INSTANCE_RUNNING` | Instance state is 'running' | `instanceId`, `publicIp`, `privateIp`, `state`, `stateReason`, `name`, `instanceType`, `az`, `vpcId`, `subnetId`, `securityGroups` |
 | | `HAS_PUBLIC_IP` | Instance has a public IP assigned | |
 | | `IN_SECURITY_GROUP` | Instance is member of specific SG | |
 | | `IN_SUBNET` | Instance is in specific Subnet | |
-| **ALB** | `TARGET_GROUP_HEALTHY` | TG has >=1 healthy target | `healthyCount`, `totalCount`, `targetIds`, `targetGroupArn` |
+| **ALB** | `TARGET_GROUP_HEALTHY` | TG has >=1 healthy target | `healthyCount`, `totalCount`, `targetIds`, `targetGroupArn`, `listenerPort`, `protocol` |
+| | `ALB_LISTENER_EXISTS` | Listener exists on LB & Port | |
 | **Route53** | `DNS_POINTS_TO` | Record matches expected value | `recordName`, `type`, `values`, `aliasValue`, `ttl`, `hostedZoneId` |
 | | `RECORD_EXISTS` | DNS record exists in zone | |
 | | `TTL_EQUALS` | Record TTL matches expected | |

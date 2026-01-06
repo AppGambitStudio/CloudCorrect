@@ -497,7 +497,10 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                                                     </>
                                                 )}
                                                 {newCheck.service === 'ALB' && (
-                                                    <SelectItem value="TARGET_GROUP_HEALTHY">Target Group Healthy</SelectItem>
+                                                    <>
+                                                        <SelectItem value="TARGET_GROUP_HEALTHY">Target Group Healthy</SelectItem>
+                                                        <SelectItem value="ALB_LISTENER_EXISTS">Listener Exists</SelectItem>
+                                                    </>
                                                 )}
                                                 {newCheck.service === 'Route53' && (
                                                     <>
@@ -600,13 +603,32 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                                                     />
                                                 )}
                                             </div>
-                                        ) : newCheck.type === 'TARGET_GROUP_HEALTHY' ? (
-                                            <Input
-                                                className="h-12 border-slate-200"
-                                                placeholder="Target Group ARN"
-                                                value={newCheck.parameters.targetGroupArn || ''}
-                                                onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, targetGroupArn: e.target.value } })}
-                                            />
+                                        ) : newCheck.service === 'ALB' ? (
+                                            <div className="space-y-2">
+                                                {newCheck.type === 'TARGET_GROUP_HEALTHY' ? (
+                                                    <Input
+                                                        className="h-12 border-slate-200"
+                                                        placeholder="Target Group ARN"
+                                                        value={newCheck.parameters.targetGroupArn || ''}
+                                                        onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, targetGroupArn: e.target.value } })}
+                                                    />
+                                                ) : (
+                                                    <>
+                                                        <Input
+                                                            className="h-12 border-slate-200"
+                                                            placeholder="Load Balancer ARN"
+                                                            value={newCheck.parameters.loadBalancerArn || ''}
+                                                            onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, loadBalancerArn: e.target.value } })}
+                                                        />
+                                                        <Input
+                                                            className="h-12 border-slate-200"
+                                                            placeholder="Listener Port (e.g. 443)"
+                                                            value={newCheck.parameters.listenerPort || ''}
+                                                            onChange={(e) => setNewCheck({ ...newCheck, parameters: { ...newCheck.parameters, listenerPort: e.target.value } })}
+                                                        />
+                                                    </>
+                                                )}
+                                            </div>
                                         ) : newCheck.service === 'Route53' ? (
                                             <div className="space-y-2">
                                                 <Input
@@ -749,8 +771,8 @@ export default function GroupDetailPage({ params }: { params: Promise<{ id: stri
                                                         <span className="font-bold text-blue-700">{"{{"}{c.alias}{"}}"}</span>
                                                         <span className="text-blue-500">: </span>
                                                         <span className="text-slate-500 italic block mt-1">
-                                                            {c.service === 'EC2' && 'publicIp, privateIp, instanceId, state, instanceType, az, vpcId, subnetId'}
-                                                            {c.service === 'ALB' && 'healthyCount, totalCount, targetGroupArn'}
+                                                            {c.service === 'EC2' && 'publicIp, privateIp, instanceId, state, stateReason, instanceType, az, vpcId, subnetId'}
+                                                            {c.service === 'ALB' && 'healthyCount, totalCount, targetGroupArn, listenerPort, protocol'}
                                                             {c.service === 'IAM' && 'arn, roleName, path, createDate'}
                                                             {c.service === 'S3' && 'bucketName, rulesCount, region'}
                                                             {c.service === 'NETWORK' && 'status, latency, url, contentType, server'}

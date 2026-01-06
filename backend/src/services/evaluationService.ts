@@ -1,5 +1,5 @@
 import { EC2Client, DescribeInstancesCommand } from '@aws-sdk/client-ec2';
-import { ElasticLoadBalancingV2Client, DescribeTargetHealthCommand } from '@aws-sdk/client-elastic-load-balancing-v2';
+import { ElasticLoadBalancingV2Client, DescribeTargetHealthCommand, DescribeListenersCommand } from '@aws-sdk/client-elastic-load-balancing-v2';
 import { Route53Client, ListResourceRecordSetsCommand } from '@aws-sdk/client-route-53';
 import { IAMClient, GetRoleCommand, ListAttachedRolePoliciesCommand } from '@aws-sdk/client-iam';
 import { S3Client, GetBucketLifecycleConfigurationCommand, HeadBucketCommand, GetBucketPolicyCommand, GetPublicAccessBlockCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
@@ -152,11 +152,12 @@ async function evaluateEC2Check(check: Check, credentials: any): Promise<CheckRe
     const az = instance.Placement?.AvailabilityZone;
     const vpcId = instance.VpcId;
     const subnetId = instance.SubnetId;
+    const stateReason = instance.StateReason?.Message || 'none';
     const nameTag = instance.Tags?.find(t => t.Key === 'Name')?.Value || 'Unnamed';
 
     // Detailed evidence string for history view
     const securityGroups = instance.SecurityGroups?.map(sg => sg.GroupId).join(', ') || 'None';
-    const evidence = `ID: ${instanceId} | Name: ${nameTag} | State: ${state} | Type: ${instanceType} | AZ: ${az} | Public IP: ${publicIp || 'None'} | SGs: ${securityGroups}`;
+    const evidence = `ID: ${instanceId} | Name: ${nameTag} | State: ${state} | Reason: ${stateReason} | Type: ${instanceType} | AZ: ${az} | Public IP: ${publicIp || 'None'} | SGs: ${securityGroups}`;
 
     if (check.type === 'INSTANCE_RUNNING' || check.type === 'INSTANCE_AVAILABLE') {
         return {
@@ -165,8 +166,8 @@ async function evaluateEC2Check(check: Check, credentials: any): Promise<CheckRe
             status: state === 'running' ? 'PASS' : 'FAIL',
             expected: 'instance.state == running',
             observed: evidence,
-            reason: state === 'running' ? `EC2 instance ${nameTag} (${instanceId}) is running` : `EC2 instance ${nameTag} (${instanceId}) is ${state}`,
-            data: { instanceId, publicIp, privateIp, state, name: nameTag, instanceType, az, vpcId, subnetId, securityGroups: instance.SecurityGroups?.map(sg => sg.GroupId) }
+            reason: state === 'running' ? `EC2 instance ${nameTag} (${instanceId}) is running` : `EC2 instance ${nameTag} (${instanceId}) is ${state} (${stateReason})`,
+            data: { instanceId, publicIp, privateIp, state, stateReason, name: nameTag, instanceType, az, vpcId, subnetId, securityGroups: instance.SecurityGroups?.map(sg => sg.GroupId) }
         };
     }
 
@@ -177,8 +178,8 @@ async function evaluateEC2Check(check: Check, credentials: any): Promise<CheckRe
             status: !!publicIp ? 'PASS' : 'FAIL',
             expected: 'instance has public ip',
             observed: evidence,
-            reason: publicIp ? `EC2 instance ${nameTag} has public IP ${publicIp}` : `EC2 instance ${nameTag} has no public IP`,
-            data: { instanceId, publicIp, privateIp, state, name: nameTag, instanceType, az, vpcId, subnetId, securityGroups: instance.SecurityGroups?.map(sg => sg.GroupId) }
+            reason: publicIp ? `EC2 instance ${nameTag} has public IP ${publicIp}` : `EC2 instance ${nameTag} has no public IP (${stateReason})`,
+            data: { instanceId, publicIp, privateIp, state, stateReason, name: nameTag, instanceType, az, vpcId, subnetId, securityGroups: instance.SecurityGroups?.map(sg => sg.GroupId) }
         };
     }
 
@@ -192,7 +193,7 @@ async function evaluateEC2Check(check: Check, credentials: any): Promise<CheckRe
             expected: `instance in security group ${securityGroupId}`,
             observed: evidence,
             reason: hasSg ? `EC2 instance ${nameTag} is in security group ${securityGroupId}` : `EC2 instance ${nameTag} is NOT in security group ${securityGroupId}`,
-            data: { instanceId, publicIp, privateIp, state, name: nameTag, instanceType, az, vpcId, subnetId, securityGroups: instance.SecurityGroups?.map(sg => sg.GroupId) }
+            data: { instanceId, publicIp, privateIp, state, stateReason, name: nameTag, instanceType, az, vpcId, subnetId, securityGroups: instance.SecurityGroups?.map(sg => sg.GroupId) }
         };
     }
 
@@ -206,7 +207,7 @@ async function evaluateEC2Check(check: Check, credentials: any): Promise<CheckRe
             expected: `instance in subnet ${expectedSubnetId}`,
             observed: evidence,
             reason: isInSubnet ? `EC2 instance ${nameTag} is in subnet ${expectedSubnetId}` : `EC2 instance ${nameTag} is in subnet ${subnetId} (expected ${expectedSubnetId})`,
-            data: { instanceId, publicIp, privateIp, state, name: nameTag, instanceType, az, vpcId, subnetId, securityGroups: instance.SecurityGroups?.map(sg => sg.GroupId) }
+            data: { instanceId, publicIp, privateIp, state, stateReason, name: nameTag, instanceType, az, vpcId, subnetId, securityGroups: instance.SecurityGroups?.map(sg => sg.GroupId) }
         };
     }
 
@@ -215,9 +216,8 @@ async function evaluateEC2Check(check: Check, credentials: any): Promise<CheckRe
 
 async function evaluateALBCheck(check: Check, credentials: any): Promise<CheckResult> {
     const client = await AWSAdapter.getALBClient(credentials, check.region!);
-    const { targetGroupArn } = check.parameters;
-
     if (check.type === 'TARGET_GROUP_HEALTHY') {
+        const { targetGroupArn } = check.parameters;
         const command = new DescribeTargetHealthCommand({ TargetGroupArn: targetGroupArn });
         const response = await client.send(command);
         const healthyTargets = response.TargetHealthDescriptions?.filter(t => t.TargetHealth?.State === 'healthy') || [];
@@ -234,6 +234,44 @@ async function evaluateALBCheck(check: Check, credentials: any): Promise<CheckRe
             observed: evidence,
             reason: healthyTargets.length > 0 ? `Target group is healthy with ${healthyTargets.length} targets` : 'Target group has no healthy targets',
             data: { healthyCount: healthyTargets.length, totalCount: totalTargets, targetIds: healthyTargets.map(t => t.Target?.Id), targetGroupArn }
+        };
+    }
+
+    if (check.type === 'ALB_LISTENER_EXISTS') {
+        const { loadBalancerArn, listenerPort } = check.parameters;
+        const command = new DescribeListenersCommand({ LoadBalancerArn: loadBalancerArn });
+        const response = await client.send(command);
+        const listener = response.Listeners?.find(l => l.Port === parseInt(listenerPort));
+
+        if (!listener) {
+            return {
+                checkId: check.id,
+                alias: check.alias,
+                status: 'FAIL',
+                expected: `Listener on port ${listenerPort} exists`,
+                observed: 'Listener not found',
+                reason: `No listener found on port ${listenerPort} for LB ${loadBalancerArn}`,
+                data: { loadBalancerArn, listenerPort }
+            };
+        }
+
+        const defaultTargetGroupArn = listener.DefaultActions?.find(a => a.TargetGroupArn)?.TargetGroupArn;
+        const evidence = `Port: ${listener.Port} | Protocol: ${listener.Protocol} | TG: ${defaultTargetGroupArn?.split('/').pop() || 'None'}`;
+
+        return {
+            checkId: check.id,
+            alias: check.alias,
+            status: 'PASS',
+            expected: `Listener on port ${listenerPort} exists`,
+            observed: evidence,
+            reason: `Listener found on port ${listenerPort} (${listener.Protocol})`,
+            data: {
+                loadBalancerArn,
+                listenerPort: listener.Port,
+                protocol: listener.Protocol,
+                targetGroupArn: defaultTargetGroupArn,
+                listenerArn: listener.ListenerArn
+            }
         };
     }
 
