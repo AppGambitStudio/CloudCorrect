@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 
 const items = [
-    { label: 'Dashboard', href: '/', icon: LayoutDashboard },
+    { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { label: 'AWS Accounts', href: '/accounts', icon: Cloud },
     { label: 'Invariant Groups', href: '/groups', icon: ShieldCheck },
 ];
@@ -17,7 +17,7 @@ export function Sidebar() {
     const pathname = usePathname();
     const { logout, user } = useAuth();
 
-    if (!user) return null;
+    if (!user || pathname === '/' || pathname === '/login') return null;
 
     return (
         <div className="flex flex-col w-64 border-r bg-slate-50 min-h-screen">
