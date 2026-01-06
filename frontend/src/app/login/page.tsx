@@ -106,7 +106,7 @@ export default function LoginPage() {
             </Card>
 
             <p className="mt-8 text-xs font-medium text-slate-400">
-                &copy; 2026 APPGAMBiT. Built for architectural integrity.
+                &copy; 2026 <a href="https://appgambit.com" target="_blank" rel="noopener noreferrer">APPGAMBiT</a>. Built for Architectural Integrity.
             </p>
         </div>
     );
