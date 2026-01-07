@@ -5,6 +5,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ConfirmProvider } from "@/contexts/ConfirmContext";
 import { Sidebar } from "@/components/Sidebar";
 import { Toaster } from "react-hot-toast";
+import Script from 'next/script';
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -18,8 +19,19 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const isProd = process.env.NODE_ENV === "production";
+  console.log("IS PROD:", isProd);
+
   return (
     <html lang="en">
+      <head>
+        {isProd && (
+          <Script
+            src="/env.js"
+            strategy="beforeInteractive"
+          />
+        )}
+      </head>
       <body className={inter.className}>
         <AuthProvider>
           <ConfirmProvider>

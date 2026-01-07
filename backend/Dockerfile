@@ -21,6 +21,6 @@ COPY --from=builder /app/dist ./dist
 # migrations might be needed for startup
 COPY --from=builder /app/migrations ./migrations
 
-EXPOSE 5001
+EXPOSE 10001
 
 CMD ["npm", "start"]

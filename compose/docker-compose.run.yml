@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  backend:
+    image: 701604549018.dkr.ecr.ap-south-1.amazonaws.com/cloud-correct-backend:latestarm
+    container_name: cloud-correct-backend
+    ports:
+      - "10002:10002"
+    environment:
+      - PORT=10002
+      - DATABASE_URL=${DATABASE_URL}
+      - SES_SENDER_EMAIL=${SES_SENDER_EMAIL}
+      - APP_URL=${APP_URL}
+    restart: always
+    networks:
+      - cloud-correct-network
+
+  frontend:
+    image: 701604549018.dkr.ecr.ap-south-1.amazonaws.com/cloud-correct-frontend:latestarm
+    container_name: cloud-correct-frontend
+    ports:
+      - "10001:10001"
+    environment:
+      - PORT=10001
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://192.168.1.8:10002}
+    restart: always
+    networks:
+     - cloud-correct-network
+
+networks:
+  cloud-correct-network:
+    name: cloud-correct-network
+    driver: bridge

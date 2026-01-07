@@ -1,7 +1,12 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from 'axios';
 
+const apiUrl = typeof window !== 'undefined' && (window as any)?.__ENV__
+    ? (window as any)?.__ENV__?.NEXT_PUBLIC_API_URL
+    : process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8801';
+
 const api = axios.create({
-    baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8801/api',
+    baseURL: `${apiUrl}/api`,
 });
 
 // Request interceptor for API calls

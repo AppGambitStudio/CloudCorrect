@@ -15,6 +15,8 @@ FROM node:22-alpine
 
 WORKDIR /app
 
+ENV NODE_ENV production
+
 COPY package*.json ./
 RUN npm install --omit=dev
 
@@ -23,7 +25,15 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/next.config.ts ./
 COPY --from=builder /app/package.json ./
 
-EXPOSE 8800
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY env.sh /env.sh
+
+RUN chmod +x /env.sh
+
+EXPOSE 10001
+
+ENTRYPOINT ["/env.sh"]
 
 # Next.js production server
-CMD ["npm", "start"]
+CMD ["node", "server.js"]
